@@ -43,7 +43,7 @@ public interface IRoutingDecision {
          * MULTICAST:               Multicast this packet to all the interfaces
          *                          and devices attached
          */
-        NONE, DROP, FORWARD, FORWARD_OR_FLOOD, MULTICAST
+        NONE, DROP, FORWARD, FORWARD_OR_FLOOD, MULTICAST, FORWARD_ONLY
     }
 
     public static final FloodlightContextStore<IRoutingDecision> rtStore =
