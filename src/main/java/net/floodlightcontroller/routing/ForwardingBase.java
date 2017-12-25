@@ -164,130 +164,128 @@ public abstract class ForwardingBase implements IOFMessageListener {
 	}
 
 	/**
-     * Push routes from back to front
-     * @param route Route to push
-     * @param match OpenFlow fields to match on
-     * @param srcSwPort Source switch port for the first hop
-     * @param dstSwPort Destination switch port for final hop
-     * @param cookie The cookie to set in each flow_mod
-     * @param cntx The floodlight context
-     * @param requestFlowRemovedNotification if set to true then the switch would
-     *        send a flow mod removal notification when the flow mod expires
-     * @param flowModCommand flow mod. command to use, e.g. OFFlowMod.OFPFC_ADD,
-     *        OFFlowMod.OFPFC_MODIFY etc.
-     * @return true if a packet out was sent on the first-hop switch of this route
-     */
-    public boolean pushRoute(Path route, Match match, OFPacketIn pi,
-            DatapathId pinSwitch, U64 cookie, FloodlightContext cntx,
-            boolean requestFlowRemovedNotification, OFFlowModCommand flowModCommand, IRoutingDecision decision) {
+	 * Push routes from back to front
+	 * 
+	 * @param route
+	 *            Route to push
+	 * @param match
+	 *            OpenFlow fields to match on
+	 * @param srcSwPort
+	 *            Source switch port for the first hop
+	 * @param dstSwPort
+	 *            Destination switch port for final hop
+	 * @param cookie
+	 *            The cookie to set in each flow_mod
+	 * @param cntx
+	 *            The floodlight context
+	 * @param requestFlowRemovedNotification
+	 *            if set to true then the switch would send a flow mod removal
+	 *            notification when the flow mod expires
+	 * @param flowModCommand
+	 *            flow mod. command to use, e.g. OFFlowMod.OFPFC_ADD,
+	 *            OFFlowMod.OFPFC_MODIFY etc.
+	 * @return true if a packet out was sent on the first-hop switch of this route
+	 */
+	public boolean pushRoute(Path route, Match match, OFPacketIn pi, DatapathId pinSwitch, U64 cookie,
+			FloodlightContext cntx, boolean requestFlowRemovedNotification, OFFlowModCommand flowModCommand,
+			IRoutingDecision decision) {
 
-        boolean packetOutSent = false;
+		boolean packetOutSent = false;
 
-        List<NodePortTuple> switchPortList = route.getPath();
+		List<NodePortTuple> switchPortList = route.getPath();
 
-        for (int indx = switchPortList.size() - 1; indx > 0; indx -= 2) {
-            // indx and indx-1 will always have the same switch DPID.
-            DatapathId switchDPID = switchPortList.get(indx).getNodeId();
-            IOFSwitch sw = switchService.getSwitch(switchDPID);
+		for (int indx = switchPortList.size() - 1; indx > 0; indx -= 2) {
+			// indx and indx-1 will always have the same switch DPID.
+			DatapathId switchDPID = switchPortList.get(indx).getNodeId();
+			IOFSwitch sw = switchService.getSwitch(switchDPID);
 
-            if (sw == null) {
-                if (log.isWarnEnabled()) {
-                    log.warn("Unable to push route, switch at DPID {} " + "not available", switchDPID);
-                }
-                return packetOutSent;
-            }
+			if (sw == null) {
+				if (log.isWarnEnabled()) {
+					log.warn("Unable to push route, switch at DPID {} " + "not available", switchDPID);
+				}
+				return packetOutSent;
+			}
 
-            // need to build flow mod based on what type it is. Cannot set command later
-            OFFlowMod.Builder fmb;
-            switch (flowModCommand) {
-            case ADD:
-                fmb = sw.getOFFactory().buildFlowAdd();
-                break;
-            case DELETE:
-                fmb = sw.getOFFactory().buildFlowDelete();
-                break;
-            case DELETE_STRICT:
-                fmb = sw.getOFFactory().buildFlowDeleteStrict();
-                break;
-            case MODIFY:
-                fmb = sw.getOFFactory().buildFlowModify();
-                break;
-            default:
-                log.error("Could not decode OFFlowModCommand. Using MODIFY_STRICT. (Should another be used as the default?)");        
-            case MODIFY_STRICT:
-                fmb = sw.getOFFactory().buildFlowModifyStrict();
-                break;			
-            }
+			// need to build flow mod based on what type it is. Cannot set command later
+			OFFlowMod.Builder fmb;
+			switch (flowModCommand) {
+			case ADD:
+				fmb = sw.getOFFactory().buildFlowAdd();
+				break;
+			case DELETE:
+				fmb = sw.getOFFactory().buildFlowDelete();
+				break;
+			case DELETE_STRICT:
+				fmb = sw.getOFFactory().buildFlowDeleteStrict();
+				break;
+			case MODIFY:
+				fmb = sw.getOFFactory().buildFlowModify();
+				break;
+			default:
+				log.error(
+						"Could not decode OFFlowModCommand. Using MODIFY_STRICT. (Should another be used as the default?)");
+			case MODIFY_STRICT:
+				fmb = sw.getOFFactory().buildFlowModifyStrict();
+				break;
+			}
 
-            OFActionOutput.Builder aob = sw.getOFFactory().actions().buildOutput();
-            List<OFAction> actions = new ArrayList<OFAction>();	
-            Match.Builder mb = MatchUtils.convertToVersion(match, sw.getOFFactory().getVersion());
+			OFActionOutput.Builder aob = sw.getOFFactory().actions().buildOutput();
+			List<OFAction> actions = new ArrayList<OFAction>();
+			Match.Builder mb = MatchUtils.convertToVersion(match, sw.getOFFactory().getVersion());
 
-            // set input and output ports on the switch
-            OFPort outPort = switchPortList.get(indx).getPortId();
-            OFPort inPort = switchPortList.get(indx - 1).getPortId();
-            if (FLOWMOD_DEFAULT_MATCH_IN_PORT) {
-                mb.setExact(MatchField.IN_PORT, inPort);
-            }
-            aob.setPort(outPort);
-            aob.setMaxLen(Integer.MAX_VALUE);
-            actions.add(aob.build());
+			// set input and output ports on the switch
+			OFPort outPort = switchPortList.get(indx).getPortId();
+			OFPort inPort = switchPortList.get(indx - 1).getPortId();
+			if (FLOWMOD_DEFAULT_MATCH_IN_PORT) {
+				mb.setExact(MatchField.IN_PORT, inPort);
+			}
+			aob.setPort(outPort);
+			aob.setMaxLen(Integer.MAX_VALUE);
+			actions.add(aob.build());
 
-            if (FLOWMOD_DEFAULT_SET_SEND_FLOW_REM_FLAG || requestFlowRemovedNotification) {
-                Set<OFFlowModFlags> flags = new HashSet<>();
-                flags.add(OFFlowModFlags.SEND_FLOW_REM);
-                fmb.setFlags(flags);
-            }
+			if (FLOWMOD_DEFAULT_SET_SEND_FLOW_REM_FLAG || requestFlowRemovedNotification) {
+				Set<OFFlowModFlags> flags = new HashSet<>();
+				flags.add(OFFlowModFlags.SEND_FLOW_REM);
+				fmb.setFlags(flags);
+			}
 
-            fmb.setMatch(mb.build())
-            .setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
-            .setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
-            .setBufferId(OFBufferId.NO_BUFFER)
-            .setCookie(cookie)
-            .setOutPort(outPort)
-            .setPriority(FLOWMOD_DEFAULT_PRIORITY);
+			fmb.setMatch(mb.build()).setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
+					.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT).setBufferId(OFBufferId.NO_BUFFER).setCookie(cookie)
+					.setOutPort(outPort).setPriority(FLOWMOD_DEFAULT_PRIORITY);
 
-            FlowModUtils.setActions(fmb, actions, sw);
+			FlowModUtils.setActions(fmb, actions, sw);
 
-            /* Configure for particular switch pipeline */
-            if (sw.getOFFactory().getVersion().compareTo(OFVersion.OF_10) != 0) {
-                fmb.setTableId(FLOWMOD_DEFAULT_TABLE_ID);
-            }
-                        
-            if (log.isTraceEnabled()) {
-                log.trace("Pushing Route flowmod routeIndx={} " +
-                        "sw={} inPort={} outPort={}",
-                        new Object[] {indx,
-                                sw,
-                                fmb.getMatch().get(MatchField.IN_PORT),
-                                outPort });
-            }
+			/* Configure for particular switch pipeline */
+			if (sw.getOFFactory().getVersion().compareTo(OFVersion.OF_10) != 0) {
+				fmb.setTableId(FLOWMOD_DEFAULT_TABLE_ID);
+			}
 
-            if (OFDPAUtils.isOFDPASwitch(sw)) {
-                OFDPAUtils.addLearningSwitchFlow(sw, cookie, 
-                        FLOWMOD_DEFAULT_PRIORITY, 
-                        FLOWMOD_DEFAULT_HARD_TIMEOUT,
-                        FLOWMOD_DEFAULT_IDLE_TIMEOUT,
-                        fmb.getMatch(), 
-                        null, // TODO how to determine output VLAN for lookup of L2 interface group
-                        outPort);
-            } else {
-            	if(decision.getRoutingAction() != IRoutingDecision.RoutingAction.FORWARD_ONLY)
-            		messageDamper.write(sw, fmb.build());
-            }
+			if (log.isTraceEnabled()) {
+				log.trace("Pushing Route flowmod routeIndx={} " + "sw={} inPort={} outPort={}",
+						new Object[] { indx, sw, fmb.getMatch().get(MatchField.IN_PORT), outPort });
+			}
 
-            /* Push the packet out the first hop switch */
-            if (sw.getId().equals(pinSwitch) &&
-                    !fmb.getCommand().equals(OFFlowModCommand.DELETE) &&
-                    !fmb.getCommand().equals(OFFlowModCommand.DELETE_STRICT)) {
-                /* Use the buffered packet at the switch, if there's one stored */
-                pushPacket(sw, pi, outPort, true, cntx);
-                packetOutSent = true;
-            }
-        }
+			if (OFDPAUtils.isOFDPASwitch(sw)) {
+				OFDPAUtils.addLearningSwitchFlow(sw, cookie, FLOWMOD_DEFAULT_PRIORITY, FLOWMOD_DEFAULT_HARD_TIMEOUT,
+						FLOWMOD_DEFAULT_IDLE_TIMEOUT, fmb.getMatch(), null, // TODO how to determine output VLAN for
+																			// lookup of L2 interface group
+						outPort);
+			} else {
+				if (decision == null || decision.getRoutingAction() != IRoutingDecision.RoutingAction.FORWARD_ONLY)
+					messageDamper.write(sw, fmb.build());
+			}
 
-        return packetOutSent;
-    }
+			/* Push the packet out the first hop switch */
+			if (sw.getId().equals(pinSwitch) && !fmb.getCommand().equals(OFFlowModCommand.DELETE)
+					&& !fmb.getCommand().equals(OFFlowModCommand.DELETE_STRICT)) {
+				/* Use the buffered packet at the switch, if there's one stored */
+				pushPacket(sw, pi, outPort, true, cntx);
+				packetOutSent = true;
+			}
+		}
+
+		return packetOutSent;
+	}
 
 	/**
 	 * Pushes a packet-out to a switch. The assumption here is that the packet-in
