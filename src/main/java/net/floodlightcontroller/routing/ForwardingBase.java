@@ -271,8 +271,7 @@ public abstract class ForwardingBase implements IOFMessageListener {
 																			// lookup of L2 interface group
 						outPort);
 			} else {
-				if (decision == null || decision.getRoutingAction() != IRoutingDecision.RoutingAction.FORWARD_ONLY)
-					messageDamper.write(sw, fmb.build());
+				messageDamper.write(sw, fmb.build());
 			}
 
 			/* Push the packet out the first hop switch */

@@ -240,7 +240,7 @@ public class Forwarding extends ForwardingBase
 				// don't do anything
 				return Command.CONTINUE;
 			case FORWARD_ONLY:
-				doForwardFlow(sw, pi, decision, cntx, false);
+				doForwardOnly(sw, pi, decision, cntx, false);
 				return Command.CONTINUE;
 			case FORWARD_OR_FLOOD:
 			case FORWARD:
@@ -412,6 +412,32 @@ public class Forwarding extends ForwardingBase
 		log.debug("OFMessage dampened: {}", dampened);
 	}
 
+	protected void doForwardOnly(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision, FloodlightContext cntx,
+			boolean requestFlowRemovedNotifn) {
+		IDevice dstDevice = IDeviceService.fcStore.get(cntx, IDeviceService.CONTEXT_DST_DEVICE);
+		if (dstDevice == null) {
+			log.debug("Destination device unknown. Flooding packet");
+			doFlood(sw, pi, decision, cntx);
+			return;
+		}
+
+		log.info(String.format("direct forward to %s", dstDevice.toString()));
+
+		OFPort inPort = OFMessageUtils.getInPort(pi);
+
+		for (SwitchPort sp : dstDevice.getAttachmentPoints()) {
+			if (sp.getNodeId().equals(sw.getId()) && sp.getPortId().equals(inPort))
+				continue;
+			IOFSwitch dstSw = switchService.getSwitch(sp.getNodeId());
+			OFPacketOut po = dstSw.getOFFactory().buildPacketOut().setData(pi.getData())
+					.setActions(Collections
+							.singletonList((OFAction) dstSw.getOFFactory().actions().output(OFPort.FLOOD, 0xffFFffFF)))
+					.setInPort(OFPort.CONTROLLER).build();
+			dstSw.write(po);
+		}
+		return;
+	}
+
 	protected void doForwardFlow(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision, FloodlightContext cntx,
 			boolean requestFlowRemovedNotifn) {
 		OFPort srcPort = OFMessageUtils.getInPort(pi);
@@ -420,7 +446,7 @@ public class Forwarding extends ForwardingBase
 		IDevice srcDevice = IDeviceService.fcStore.get(cntx, IDeviceService.CONTEXT_SRC_DEVICE);
 
 		if (dstDevice == null) {
-			log.debug("Destination device unknown. Flooding packet");
+			log.info("### Destination device unknown. Flooding packet");
 			doFlood(sw, pi, decision, cntx);
 			return;
 		}

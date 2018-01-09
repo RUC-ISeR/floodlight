@@ -3,6 +3,7 @@ package net.floodlightcontroller.demomodule;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
@@ -32,11 +33,13 @@ import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.IPv4;
 import net.floodlightcontroller.routing.IRoutingDecision;
 import net.floodlightcontroller.routing.RoutingDecision;
+import net.floodlightcontroller.topology.ITopologyService;
 import net.floodlightcontroller.util.OFMessageUtils;
 
 public class DemoModule implements IOFMessageListener, IFloodlightModule {
 
 	protected IFloodlightProviderService floodlightProvider;
+	protected ITopologyService topology;
 	protected static Logger logger;
 	protected static final short APP_ID = 101;
 	static {
@@ -45,6 +48,7 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 	protected static final U64 FORWARD_ONLY_COOKIE = AppCookie.makeCookie(APP_ID, 0xaaaaaaL);
 	protected static final int PACKET_MAX = 3;
 	protected Map<String, PortInfo> portInfos;
+	public static List<String> portKeyWithLinks = new ArrayList<String>();
 	protected boolean DEBUG = true;
 
 	@Override
@@ -54,8 +58,7 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
-		// TODO Auto-generated method stub
-		return false;
+		return ((type == OFType.PACKET_IN || type == OFType.FLOW_MOD) && name.equals("topology"));
 	}
 
 	@Override
@@ -85,6 +88,7 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 	@Override
 	public void init(FloodlightModuleContext context) throws FloodlightModuleException {
 		floodlightProvider = context.getServiceImpl(IFloodlightProviderService.class);
+		topology = context.getServiceImpl(ITopologyService.class);
 		logger = LoggerFactory.getLogger(DemoModule.class);
 		portInfos = new HashMap<String, PortInfo>();
 	}
@@ -117,6 +121,9 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 		boolean setDecisionFlag = false;
 		OFPort inPort = OFMessageUtils.getInPort(pi);
 		String portKey = sw.getId().toString() + "_" + inPort.toString();
+		if (portKeyWithLinks.contains(portKey))
+			return Command.CONTINUE;
+
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 		if (eth.getEtherType() == EthType.IPv4) {
 			IPv4 ipv4 = (IPv4) eth.getPayload();
@@ -124,6 +131,7 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 			MacAddress srcMac = eth.getSourceMACAddress();
 			logger.info("##### DemoModule: new Packet-In fount on Switch {} Port {}", sw.getId().toString(),
 					inPort.toString());
+
 			if (DEBUG) {
 				if (portInfos.containsKey(portKey)) {
 					PortInfo portInfo = portInfos.get(portKey);
@@ -138,6 +146,8 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 			if (portInfos.containsKey(portKey) && portInfos.get(portKey).getLastMac().equals(srcMac)
 					&& portInfos.get(portKey).getLastIP().equals(srcIp)) {
 				logger.info("port info is same as before");
+				logger.info("increase packetnum to " + (portInfos.get(portKey).getPacketNum() + 1));
+				portInfos.get(portKey).setPacketNum(portInfos.get(portKey).getPacketNum() + 1);
 				if (portInfos.get(portKey).getPacketNum() < PACKET_MAX && new Random().nextBoolean()) {
 					logger.info("set decision flag true 1");
 					setDecisionFlag = true;
@@ -152,13 +162,13 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 					portInfo.setPacketNum(0);
 					portInfos.put(portKey, portInfo);
 				} else {
-					logger.info("increase packetnum to " + (portInfos.get(portKey).getPacketNum() + 1));
-					portInfos.get(portKey).setPacketNum(portInfos.get(portKey).getPacketNum() + 1);
+					portInfos.get(portKey).setPacketNum(0);
 				}
-				if (new Random().nextBoolean()) {
-					logger.info("set decision flag true 2");
-					setDecisionFlag = true;
-				}
+				setDecisionFlag = true;
+				// if (new Random().nextBoolean()) {
+				// logger.info("set decision flag true 2");
+				// setDecisionFlag = true;
+				// }
 			}
 		}
 		if (setDecisionFlag) {
