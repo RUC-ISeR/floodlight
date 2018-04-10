@@ -29,8 +29,16 @@ public class PortInfo {
 		this.packetNum = packetNum;
 	}
 
+	public long getChangedCount() {
+		return changedCount;
+	}
+
+	public void setChangedCount(long changedCount) {
+		this.changedCount = changedCount;
+	}
+
 	private MacAddress lastMac;
 	private IPv4Address lastIP;
 	private int packetNum;
-
+	private long changedCount;
 }

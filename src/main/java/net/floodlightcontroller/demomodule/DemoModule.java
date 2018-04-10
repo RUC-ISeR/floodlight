@@ -42,6 +42,7 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 	protected ITopologyService topology;
 	protected static Logger logger;
 	protected static final short APP_ID = 101;
+	private final static int MAX_CHANGE_TIME = 10;
 	static {
 		AppCookie.registerApp(APP_ID, "DemoModule");
 	}
@@ -143,16 +144,8 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 				logger.info(String.format("newIp %s newMac %s", srcIp.toString(), srcMac.toString()));
 			}
 
-			if (portInfos.containsKey(portKey) && portInfos.get(portKey).getLastMac().equals(srcMac)
-					&& portInfos.get(portKey).getLastIP().equals(srcIp)) {
-				logger.info("port info is same as before");
-				logger.info("increase packetnum to " + (portInfos.get(portKey).getPacketNum() + 1));
-				portInfos.get(portKey).setPacketNum(portInfos.get(portKey).getPacketNum() + 1);
-				if (portInfos.get(portKey).getPacketNum() < PACKET_MAX && new Random().nextBoolean()) {
-					logger.info("set decision flag true 1");
-					setDecisionFlag = true;
-				}
-			} else {
+			if (!portInfos.containsKey(portKey) || !portInfos.get(portKey).getLastMac().equals(srcMac)
+					|| !portInfos.get(portKey).getLastIP().equals(srcIp)) {
 				logger.info("port info is not same as before");
 				if (!portInfos.containsKey(portKey)) {
 					logger.info("port info empty, add new");
@@ -160,15 +153,23 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 					portInfo.setLastMac(srcMac);
 					portInfo.setLastIP(srcIp);
 					portInfo.setPacketNum(0);
+					portInfo.setChangedCount(0);
 					portInfos.put(portKey, portInfo);
 				} else {
 					portInfos.get(portKey).setPacketNum(0);
+					portInfos.get(portKey).setChangedCount(portInfos.get(portKey).getChangedCount() + 1);
 				}
-				setDecisionFlag = true;
-				// if (new Random().nextBoolean()) {
-				// logger.info("set decision flag true 2");
-				// setDecisionFlag = true;
-				// }
+				if (portInfos.get(portKey).getChangedCount() < MAX_CHANGE_TIME)
+					return Command.CONTINUE;
+				setDecisionFlag = new Random().nextBoolean();
+			} else {
+				logger.info("port info is same as before");
+				logger.info("increase packetnum to " + (portInfos.get(portKey).getPacketNum() + 1));
+				portInfos.get(portKey).setPacketNum(portInfos.get(portKey).getPacketNum() + 1);
+				if (portInfos.get(portKey).getPacketNum() < PACKET_MAX && new Random().nextBoolean()) {
+					logger.info("set decision flag true 1");
+					setDecisionFlag = true;
+				}
 			}
 		}
 		if (setDecisionFlag) {
