@@ -42,7 +42,6 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 	protected ITopologyService topology;
 	protected static Logger logger;
 	protected static final short APP_ID = 101;
-	private final static int MAX_CHANGE_TIME = 10;
 	static {
 		AppCookie.registerApp(APP_ID, "DemoModule");
 	}
@@ -119,66 +118,54 @@ public class DemoModule implements IOFMessageListener, IFloodlightModule {
 
 	public Command processPacketInMessage(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision,
 			FloodlightContext cntx) {
-		boolean setDecisionFlag = false;
+		boolean fowrardOnlyFlag = false;
 		OFPort inPort = OFMessageUtils.getInPort(pi);
 		String portKey = sw.getId().toString() + "_" + inPort.toString();
 		if (portKeyWithLinks.contains(portKey))
-			return Command.CONTINUE;
+			return Command.CONTINUE; // port with links
 
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 		if (eth.getEtherType() == EthType.IPv4) {
 			IPv4 ipv4 = (IPv4) eth.getPayload();
 			IPv4Address srcIp = ipv4.getSourceAddress();
 			MacAddress srcMac = eth.getSourceMACAddress();
-			logger.info("##### DemoModule: new Packet-In fount on Switch {} Port {}", sw.getId().toString(),
-					inPort.toString());
 
-			if (DEBUG) {
-				if (portInfos.containsKey(portKey)) {
-					PortInfo portInfo = portInfos.get(portKey);
-					logger.info(String.format("lastIp %s lastMac %s packetNum %d", portInfo.getLastIP().toString(),
-							portInfo.getLastMac().toString(), portInfo.getPacketNum()));
-				} else {
-					logger.info("port info not exists");
-				}
-				logger.info(String.format("newIp %s newMac %s", srcIp.toString(), srcMac.toString()));
+			if (!portInfos.containsKey(portKey)) {
+				PortInfo portInfo = new PortInfo();
+				portInfo.setLastMac(srcMac);
+				portInfo.setLastIP(srcIp);
+				portInfo.setPacketNum(0);
+				portInfo.setNewFlag(false);
+				portInfos.put(portKey, portInfo);
+				return Command.CONTINUE; // new port
 			}
 
-			if (!portInfos.containsKey(portKey) || !portInfos.get(portKey).getLastMac().equals(srcMac)
-					|| !portInfos.get(portKey).getLastIP().equals(srcIp)) {
-				logger.info("port info is not same as before");
-				if (!portInfos.containsKey(portKey)) {
-					logger.info("port info empty, add new");
-					PortInfo portInfo = new PortInfo();
-					portInfo.setLastMac(srcMac);
-					portInfo.setLastIP(srcIp);
-					portInfo.setPacketNum(0);
-					portInfo.setChangedCount(0);
-					portInfos.put(portKey, portInfo);
-				} else {
-					portInfos.get(portKey).setPacketNum(0);
-					portInfos.get(portKey).setChangedCount(portInfos.get(portKey).getChangedCount() + 1);
-				}
-				if (portInfos.get(portKey).getChangedCount() < MAX_CHANGE_TIME)
-					return Command.CONTINUE;
-				setDecisionFlag = new Random().nextBoolean();
+			PortInfo portInfo = portInfos.get(portKey);
+			boolean isSourceAddrSameAsBefore = portInfos.get(portKey).getLastMac().equals(srcMac)
+					&& portInfos.get(portKey).getLastIP().equals(srcIp);
+
+			if (isSourceAddrSameAsBefore) {
+				if (!portInfo.isNewFlag())
+					return Command.CONTINUE; // not new flow
+				portInfo.increasePacketNum();
+				if (portInfos.get(portKey).getPacketNum() < PACKET_MAX)
+					fowrardOnlyFlag = new Random().nextBoolean();
 			} else {
-				logger.info("port info is same as before");
-				logger.info("increase packetnum to " + (portInfos.get(portKey).getPacketNum() + 1));
-				portInfos.get(portKey).setPacketNum(portInfos.get(portKey).getPacketNum() + 1);
-				if (portInfos.get(portKey).getPacketNum() < PACKET_MAX && new Random().nextBoolean()) {
-					logger.info("set decision flag true 1");
-					setDecisionFlag = true;
-				}
+				portInfo.setPacketNum(0);
+				portInfo.setNewFlag(true);
+				fowrardOnlyFlag = new Random().nextBoolean();
 			}
-		}
-		if (setDecisionFlag) {
-			logger.info("set decision");
-			decision = new RoutingDecision(sw.getId(), inPort,
-					IDeviceService.fcStore.get(cntx, IDeviceService.CONTEXT_SRC_DEVICE),
-					IRoutingDecision.RoutingAction.FORWARD_ONLY);
-			decision.setDescriptor(FORWARD_ONLY_COOKIE);
-			decision.addToContext(cntx);
+
+			if (fowrardOnlyFlag) {
+				logger.info("forward only");
+				decision = new RoutingDecision(sw.getId(), inPort,
+						IDeviceService.fcStore.get(cntx, IDeviceService.CONTEXT_SRC_DEVICE),
+						IRoutingDecision.RoutingAction.FORWARD_ONLY);
+				decision.setDescriptor(FORWARD_ONLY_COOKIE);
+				decision.addToContext(cntx);
+			} else {
+				portInfo.setNewFlag(false);
+			}
 		}
 		return Command.CONTINUE;
 	}

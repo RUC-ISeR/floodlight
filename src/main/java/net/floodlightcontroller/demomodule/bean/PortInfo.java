@@ -29,6 +29,10 @@ public class PortInfo {
 		this.packetNum = packetNum;
 	}
 
+	public void increasePacketNum() {
+		this.packetNum++;
+	}
+
 	public long getChangedCount() {
 		return changedCount;
 	}
@@ -37,8 +41,17 @@ public class PortInfo {
 		this.changedCount = changedCount;
 	}
 
+	public boolean isNewFlag() {
+		return newFlag;
+	}
+
+	public void setNewFlag(boolean newFlag) {
+		this.newFlag = newFlag;
+	}
+
 	private MacAddress lastMac;
 	private IPv4Address lastIP;
 	private int packetNum;
 	private long changedCount;
+	private boolean newFlag;
 }
